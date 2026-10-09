@@ -11,6 +11,7 @@ import {
   enrollLeadListAction,
   enrollLeadSegmentAction,
 } from "@/app/(app)/campaigns/[campaignId]/actions";
+import { unwrapActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -103,7 +104,7 @@ export function EnrollDialog({
             toast.error("Choose a lead to enroll.");
             return;
           }
-          await enrollLeadAction(campaignId, leadId, override, confirmSuppressed);
+          unwrapActionResult(await enrollLeadAction(campaignId, leadId, override, confirmSuppressed));
           toast.success("Lead enrolled.");
         } else {
           const sourceId = mode === "list" ? listId : segmentId;
@@ -111,10 +112,11 @@ export function EnrollDialog({
             toast.error(mode === "list" ? "Choose a list to enroll." : "Choose a segment to enroll.");
             return;
           }
-          const result =
+          const result = unwrapActionResult(
             mode === "list"
               ? await enrollLeadListAction(campaignId, sourceId, override, confirmSuppressed)
-              : await enrollLeadSegmentAction(campaignId, sourceId, override, confirmSuppressed);
+              : await enrollLeadSegmentAction(campaignId, sourceId, override, confirmSuppressed),
+          );
           toast.success(
             result.skipped > 0
               ? `${result.inserted} lead${result.inserted === 1 ? "" : "s"} enrolled, ${result.skipped} already enrolled.`

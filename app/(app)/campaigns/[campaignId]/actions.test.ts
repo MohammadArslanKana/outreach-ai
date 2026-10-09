@@ -88,7 +88,9 @@ import {
   launchCampaignAction,
   pauseCampaignAction,
   removeCampaignMailboxAction,
+  resumeCampaignAction,
   sendNowAction,
+  stopCampaignAction,
 } from "./actions";
 import type { Tables } from "@/types/database.types";
 
@@ -118,7 +120,13 @@ const mockRequestSendNow = vi.mocked(requestSendNow);
 const mockGetLeadSegment = vi.mocked(getLeadSegment);
 const mockListLeadsMatchingRules = vi.mocked(listLeadsMatchingRules);
 
-const USER = { id: "user-1", email: "owner@example.com" };
+// Expected failures come back as a value (see lib/action-result.ts) rather
+// than a thrown error, whose message Next.js redacts in production builds.
+function failure(message: string | RegExp) {
+  return { ok: false, error: typeof message === "string" ? message : expect.stringMatching(message) };
+}
+
+const USER ={ id: "user-1", email: "owner@example.com" };
 const ORGANIZATION = { id: "org-1" };
 
 function makeCampaign(overrides: Partial<Tables<"campaigns">> = {}): Tables<"campaigns"> {
@@ -270,28 +278,28 @@ describe("sendNowAction", () => {
   it("surfaces a refusal from request_send_now (e.g. the worker claimed the lead first)", async () => {
     mockRequestSendNow.mockResolvedValue(false);
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/already being sent or is no longer eligible/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/already being sent or is no longer eligible/i));
     expect(mockRevalidatePath).not.toHaveBeenCalled();
   });
 
   it("rejects when the campaign is paused (respects pause protection)", async () => {
     mockGetCampaign.mockResolvedValue(makeCampaign({ status: "paused" }) as never);
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/active campaign/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/active campaign/i));
     expect(mockRequestSendNow).not.toHaveBeenCalled();
   });
 
   it("rejects when the campaign is a draft", async () => {
     mockGetCampaign.mockResolvedValue(makeCampaign({ status: "draft" }) as never);
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/active campaign/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/active campaign/i));
     expect(mockRequestSendNow).not.toHaveBeenCalled();
   });
 
   it("rejects when the campaign is completed", async () => {
     mockGetCampaign.mockResolvedValue(makeCampaign({ status: "completed" }) as never);
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/active campaign/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/active campaign/i));
     expect(mockRequestSendNow).not.toHaveBeenCalled();
   });
 
@@ -300,7 +308,7 @@ describe("sendNowAction", () => {
       mockRequestSendNow.mockClear();
       mockGetCampaignLead.mockResolvedValue(makeCampaignLead({ status }) as never);
 
-      await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/isn't currently active/i);
+      expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/isn't currently active/i));
       expect(mockRequestSendNow).not.toHaveBeenCalled();
     }
   });
@@ -308,14 +316,14 @@ describe("sendNowAction", () => {
   it("rejects a lead with no pending step", async () => {
     mockGetCampaignLead.mockResolvedValue(makeCampaignLead({ current_step_id: null }) as never);
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/no pending step/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/no pending step/i));
     expect(mockRequestSendNow).not.toHaveBeenCalled();
   });
 
   it("rejects a lead with no assigned mailbox", async () => {
     mockGetCampaignLead.mockResolvedValue(makeCampaignLead({ mailbox_id: null }) as never);
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/no assigned mailbox/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/no assigned mailbox/i));
     expect(mockRequestSendNow).not.toHaveBeenCalled();
   });
 
@@ -324,7 +332,7 @@ describe("sendNowAction", () => {
       makeCampaignLead({ locked_until: "2026-09-18T12:05:00.000Z" }) as never, // 5 min in the future
     );
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/already being sent/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/already being sent/i));
     expect(mockRequestSendNow).not.toHaveBeenCalled();
   });
 
@@ -341,7 +349,7 @@ describe("sendNowAction", () => {
   it("rejects a campaign_lead that belongs to a different campaign", async () => {
     mockGetCampaignLead.mockResolvedValue(makeCampaignLead({ campaign_id: "some-other-campaign" }) as never);
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/does not belong/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/does not belong/i));
     expect(mockRequestSendNow).not.toHaveBeenCalled();
   });
 
@@ -354,7 +362,7 @@ describe("sendNowAction", () => {
     const { RateLimitError } = await import("@/lib/rate-limit/check-rate-limit");
     mockCheckRateLimit.mockRejectedValue(new RateLimitError(60));
 
-    await expect(sendNowAction("campaign-1", "cl-1")).rejects.toThrow(/too many attempts/i);
+    expect(await sendNowAction("campaign-1", "cl-1")).toEqual(failure(/too many attempts/i));
     expect(mockRequestSendNow).not.toHaveBeenCalled();
   });
 });
@@ -373,8 +381,38 @@ describe("pauseCampaignAction", () => {
   it("rejects a campaign that isn't running", async () => {
     mockGetCampaign.mockResolvedValue(makeCampaign({ status: "paused" }) as never);
 
-    await expect(pauseCampaignAction("campaign-1")).rejects.toThrow(/only a running campaign/i);
+    expect(await pauseCampaignAction("campaign-1")).toEqual(failure(/only a running campaign/i));
     expect(mockUpdateCampaign).not.toHaveBeenCalled();
+  });
+});
+
+// Regression: these used to be thrown, which Next.js production builds reduce
+// to an opaque digest — the user saw a generic error instead of the reason.
+describe("user-facing errors are returned as values", () => {
+  it("returns each state-transition message verbatim for a draft campaign", async () => {
+    mockGetCampaign.mockResolvedValue(makeCampaign({ status: "draft" }) as never);
+
+    expect(await pauseCampaignAction("campaign-1")).toEqual(failure("Only a running campaign can be paused."));
+    expect(await resumeCampaignAction("campaign-1")).toEqual(failure("Only a paused campaign can be resumed."));
+    expect(await stopCampaignAction("campaign-1")).toEqual(failure("Only a running or paused campaign can be stopped."));
+    expect(mockUpdateCampaign).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic message for an unexpected failure, never the internal detail, and logs it server-side", async () => {
+    const internal = new Error('permission denied for table campaigns (SQLSTATE 42501) at /var/task/.next/server/chunk.js:1:2');
+    mockGetCampaign.mockRejectedValue(internal);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await pauseCampaignAction("campaign-1");
+
+    expect(result).toEqual({ ok: false, error: "Something went wrong. Try again." });
+    expect(JSON.stringify(result)).not.toMatch(/permission|SQLSTATE|\/var\/task/);
+    expect(consoleError).toHaveBeenCalledWith("[campaigns] unexpected error", internal);
+    consoleError.mockRestore();
+  });
+
+  it("returns ok with no error on success", async () => {
+    expect(await pauseCampaignAction("campaign-1")).toEqual({ ok: true, data: undefined });
   });
 });
 
@@ -565,7 +603,7 @@ describe("enrollLeadSegmentAction", () => {
       ["lead-a", "lead-b"],
       expect.any(Function),
     );
-    expect(result).toEqual({ inserted: 2, skipped: 0 });
+    expect(result).toEqual({ ok: true, data: { inserted: 2, skipped: 0 } });
     expect(mockRevalidatePath).toHaveBeenCalledWith("/campaigns/campaign-1");
   });
 
@@ -593,7 +631,7 @@ describe("enrollLeadSegmentAction", () => {
   it("enrolls nothing when rate limited", async () => {
     mockCheckRateLimit.mockRejectedValue(new RateLimitError(60));
 
-    await expect(enrollLeadSegmentAction("campaign-1", "seg-1", undefined, true)).rejects.toThrow(/too many attempts/i);
+    expect(await enrollLeadSegmentAction("campaign-1", "seg-1", undefined, true)).toEqual(failure(/too many attempts/i));
     expect(mockGetLeadSegment).not.toHaveBeenCalled();
     expect(mockAddLeadsToCampaign).not.toHaveBeenCalled();
   });
@@ -601,7 +639,7 @@ describe("enrollLeadSegmentAction", () => {
   it("enrolls nothing into a campaign the caller doesn't own", async () => {
     mockGetCampaign.mockRejectedValue(new Error("Expected a row, received none."));
 
-    await expect(enrollLeadSegmentAction("campaign-1", "seg-1", undefined, true)).rejects.toThrow(/something went wrong/i);
+    expect(await enrollLeadSegmentAction("campaign-1", "seg-1", undefined, true)).toEqual(failure(/something went wrong/i));
     expect(mockGetLeadSegment).not.toHaveBeenCalled();
     expect(mockAddLeadsToCampaign).not.toHaveBeenCalled();
   });
@@ -609,9 +647,7 @@ describe("enrollLeadSegmentAction", () => {
   it("enrolls nothing from a segment the caller doesn't own", async () => {
     mockGetLeadSegment.mockRejectedValue(new Error("Expected a row, received none."));
 
-    await expect(enrollLeadSegmentAction("campaign-1", "seg-other", undefined, true)).rejects.toThrow(
-      /something went wrong/i,
-    );
+    expect(await enrollLeadSegmentAction("campaign-1", "seg-other", undefined, true)).toEqual(failure(/something went wrong/i));
     expect(mockListLeadsMatchingRules).not.toHaveBeenCalled();
     expect(mockAddLeadsToCampaign).not.toHaveBeenCalled();
   });
@@ -621,7 +657,7 @@ describe("enrollLeadSegmentAction", () => {
       makeSegment({ rules: [{ field: "custom_fields", operator: "equals", value: "x" }] }) as never,
     );
 
-    await expect(enrollLeadSegmentAction("campaign-1", "seg-1", undefined, true)).rejects.toThrow(/no longer valid/i);
+    expect(await enrollLeadSegmentAction("campaign-1", "seg-1", undefined, true)).toEqual(failure(/no longer valid/i));
     expect(mockListLeadsMatchingRules).not.toHaveBeenCalled();
     expect(mockAddLeadsToCampaign).not.toHaveBeenCalled();
   });
@@ -629,9 +665,7 @@ describe("enrollLeadSegmentAction", () => {
   it("requires confirmation when a matching lead is suppressed, and enrolls once confirmed", async () => {
     mockGetSuppressedEmails.mockResolvedValue(new Map([["lead-b@example.com", "unsubscribed"]]) as never);
 
-    await expect(enrollLeadSegmentAction("campaign-1", "seg-1")).rejects.toThrow(
-      "1 lead in this segment is suppressed (bounced/unsubscribed). Confirm to enroll anyway.",
-    );
+    expect(await enrollLeadSegmentAction("campaign-1", "seg-1")).toEqual(failure("1 lead in this segment is suppressed (bounced/unsubscribed). Confirm to enroll anyway."));
     expect(mockAddLeadsToCampaign).not.toHaveBeenCalled();
 
     await enrollLeadSegmentAction("campaign-1", "seg-1", undefined, true);
@@ -642,9 +676,7 @@ describe("enrollLeadSegmentAction", () => {
     mockListLeads.mockResolvedValue([makeLead("lead-a")]);
     mockGetSuppressedEmails.mockResolvedValue(new Map([["lead-a@example.com", "bounced"]]) as never);
 
-    await expect(enrollLeadListAction("campaign-1", "list-1")).rejects.toThrow(
-      "1 lead in this list is suppressed (bounced/unsubscribed). Confirm to enroll anyway.",
-    );
+    expect(await enrollLeadListAction("campaign-1", "list-1")).toEqual(failure("1 lead in this list is suppressed (bounced/unsubscribed). Confirm to enroll anyway."));
     expect(mockListLeads).toHaveBeenCalledWith(expect.anything(), "user-1", { listId: "list-1", limit: 10000 });
   });
 });
@@ -730,7 +762,7 @@ describe("launchCampaignAction", () => {
     mockListSequences.mockResolvedValue([{ id: "seq-1", campaign_id: "campaign-1", name: "Default", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }] as never);
     mockListSequenceSteps.mockResolvedValue([makeSequenceStep()]);
 
-    await expect(launchCampaignAction("campaign-1")).rejects.toThrow(/no mailbox assigned/i);
+    expect(await launchCampaignAction("campaign-1")).toEqual(failure(/no mailbox assigned/i));
 
     expect(mockUpdateCampaign).not.toHaveBeenCalled();
     expect(mockUpdateCampaignLead).not.toHaveBeenCalled();
@@ -753,7 +785,7 @@ describe("addCampaignMailboxAction", () => {
   it("never adds the mailbox when the ownership check fails", async () => {
     mockGetCampaign.mockRejectedValue(new Error("not found"));
 
-    await expect(addCampaignMailboxAction("campaign-1", "mailbox-1")).rejects.toThrow();
+    expect(await addCampaignMailboxAction("campaign-1", "mailbox-1")).toEqual(failure("Something went wrong. Try again."));
 
     expect(mockAddCampaignMailbox).not.toHaveBeenCalled();
     expect(mockRevalidatePath).not.toHaveBeenCalled();
@@ -772,7 +804,7 @@ describe("removeCampaignMailboxAction", () => {
   it("never removes the mailbox when the ownership check fails", async () => {
     mockGetCampaign.mockRejectedValue(new Error("not found"));
 
-    await expect(removeCampaignMailboxAction("campaign-1", "mailbox-1")).rejects.toThrow();
+    expect(await removeCampaignMailboxAction("campaign-1", "mailbox-1")).toEqual(failure("Something went wrong. Try again."));
 
     expect(mockRemoveCampaignMailbox).not.toHaveBeenCalled();
     expect(mockRevalidatePath).not.toHaveBeenCalled();

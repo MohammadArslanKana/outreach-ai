@@ -25,7 +25,8 @@ import {
   type LeadInput,
   type LeadsTimezoneUpdateInput,
 } from "@/lib/validations/leads";
-import { assertWithinLeadLimit } from "@/lib/billing/limits";
+import { assertWithinLeadLimit, PlanLimitError } from "@/lib/billing/limits";
+import type { ActionResult } from "@/lib/action-result";
 import { verifyLead } from "@/lib/verification/verify";
 import { checkRateLimit } from "@/lib/rate-limit/check-rate-limit";
 
@@ -69,12 +70,19 @@ export async function deleteLeadListAction(id: string) {
   revalidatePath("/leads");
 }
 
-export async function createLeadAction(input: LeadInput) {
+// A plan limit is returned rather than thrown so the upgrade message reaches
+// the user — see lib/action-result.ts.
+export async function createLeadAction(input: LeadInput): Promise<ActionResult> {
   const parsed = leadSchema.parse(input);
   const user = await requireUser();
   const supabase = await createClient();
 
-  await assertWithinLeadLimit(supabase, user.id, user.email);
+  try {
+    await assertWithinLeadLimit(supabase, user.id, user.email);
+  } catch (error) {
+    if (error instanceof PlanLimitError) return { ok: false, error: error.message };
+    throw error;
+  }
 
   await createLead(supabase, {
     user_id: user.id,
@@ -92,6 +100,7 @@ export async function createLeadAction(input: LeadInput) {
 
   revalidatePath("/leads");
   revalidatePath("/dashboard");
+  return { ok: true, data: undefined };
 }
 
 export async function updateLeadAction(id: string, input: LeadInput) {

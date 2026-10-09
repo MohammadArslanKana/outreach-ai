@@ -8,13 +8,17 @@ vi.mock("@/lib/db", () => ({
   updateLead: vi.fn(),
   setLeadsTimezone: vi.fn(),
 }));
-vi.mock("@/lib/billing/limits", () => ({ assertWithinLeadLimit: vi.fn() }));
+vi.mock("@/lib/billing/limits", () => ({
+  assertWithinLeadLimit: vi.fn(),
+  PlanLimitError: class PlanLimitError extends Error {},
+}));
 vi.mock("@/lib/verification/verify", () => ({ verifyLead: vi.fn() }));
 vi.mock("@/lib/rate-limit/check-rate-limit", () => ({ checkRateLimit: vi.fn() }));
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/supabase/auth";
 import { createLead, setLeadsTimezone, updateLead } from "@/lib/db";
+import { assertWithinLeadLimit, PlanLimitError } from "@/lib/billing/limits";
 import { createLeadAction, setLeadsTimezoneAction, updateLeadAction } from "./actions";
 
 const mockRequireUser = vi.mocked(requireUser);
@@ -58,6 +62,26 @@ describe("lead create/edit timezone", () => {
 
     expect(mockUpdateLead).not.toHaveBeenCalled();
     expect(mockCreateLead).not.toHaveBeenCalled();
+  });
+});
+
+// Returned rather than thrown: a thrown Server Function error's message is
+// redacted in production — see lib/action-result.ts.
+describe("createLeadAction — plan limit", () => {
+  const LEAD_LIMIT = "Your account has no active subscription. The current limit allows up to 200 leads. Upgrade to add more.";
+
+  it("returns the lead-limit message and creates nothing", async () => {
+    vi.mocked(assertWithinLeadLimit).mockRejectedValueOnce(new PlanLimitError(LEAD_LIMIT));
+
+    const result = await createLeadAction({ email: "jane@acme.com" });
+
+    expect(result).toEqual({ ok: false, error: LEAD_LIMIT });
+    expect(mockCreateLead).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("returns ok when the lead is created", async () => {
+    expect(await createLeadAction({ email: "jane@acme.com" })).toEqual({ ok: true, data: undefined });
   });
 });
 

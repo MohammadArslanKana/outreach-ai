@@ -8,6 +8,7 @@ import type { MailboxSafe } from "@/lib/db";
 import type { SendingWindow } from "@/lib/validations/sending-window";
 import { updateCampaignAction } from "@/app/(app)/campaigns/actions";
 import { addCampaignMailboxAction, removeCampaignMailboxAction } from "@/app/(app)/campaigns/[campaignId]/actions";
+import { ActionError, unwrapActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,17 +42,19 @@ export function MailboxAssignmentStep({
   function handleChange(mailboxId: string) {
     startTransition(async () => {
       try {
-        await updateCampaignAction(campaign.id, {
-          name: campaign.name,
-          dailyLimit: campaign.daily_limit,
-          defaultMailboxId: mailboxId,
-          sendingWindow,
-          status: campaign.status as "draft" | "active" | "paused" | "completed",
-        });
+        unwrapActionResult(
+          await updateCampaignAction(campaign.id, {
+            name: campaign.name,
+            dailyLimit: campaign.daily_limit,
+            defaultMailboxId: mailboxId,
+            sendingWindow,
+            status: campaign.status as "draft" | "active" | "paused" | "completed",
+          }),
+        );
         toast.success("Mailbox assigned.");
         onAssigned();
-      } catch {
-        toast.error("Couldn't assign the mailbox. Try again.");
+      } catch (error) {
+        toast.error(error instanceof ActionError ? error.message : "Couldn't assign the mailbox. Try again.");
       }
     });
   }
@@ -66,14 +69,14 @@ export function MailboxAssignmentStep({
   function togglePoolMailbox(mailboxId: string, inPool: boolean) {
     startPoolTransition(async () => {
       try {
-        if (inPool) {
-          await removeCampaignMailboxAction(campaign.id, mailboxId);
-        } else {
-          await addCampaignMailboxAction(campaign.id, mailboxId);
-        }
+        unwrapActionResult(
+          inPool
+            ? await removeCampaignMailboxAction(campaign.id, mailboxId)
+            : await addCampaignMailboxAction(campaign.id, mailboxId),
+        );
         onAssigned();
-      } catch {
-        toast.error("Couldn't update the mailbox pool. Try again.");
+      } catch (error) {
+        toast.error(error instanceof ActionError ? error.message : "Couldn't update the mailbox pool. Try again.");
       }
     });
   }

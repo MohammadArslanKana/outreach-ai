@@ -17,7 +17,8 @@ import { mailboxSchema, type MailboxInput } from "@/lib/validations/mailboxes";
 import { encryptSmtpPassword } from "@/lib/crypto/smtp-secret";
 import { ImapReplyChecker } from "@/lib/email/reply-providers/imap";
 import { verifySmtpConnection } from "@/lib/email/providers/smtp";
-import { assertWithinMailboxLimit } from "@/lib/billing/limits";
+import { assertWithinMailboxLimit, PlanLimitError } from "@/lib/billing/limits";
+import type { ActionResult } from "@/lib/action-result";
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit/check-rate-limit";
 import type { Tables } from "@/types/database.types";
 
@@ -25,7 +26,9 @@ import type { Tables } from "@/types/database.types";
 // calls them, so re-validate here even though the client form (react-hook-
 // form + the same zod schema) already validated this input.
 
-export async function createMailboxAction(input: MailboxInput) {
+// A plan limit is returned rather than thrown so the upgrade message reaches
+// the user — see lib/action-result.ts.
+export async function createMailboxAction(input: MailboxInput): Promise<ActionResult> {
   const parsed = mailboxSchema.parse(input);
   if (!parsed.smtpPassword) {
     throw new Error("Enter the SMTP password to connect a mailbox.");
@@ -37,7 +40,12 @@ export async function createMailboxAction(input: MailboxInput) {
   const user = await requireUser();
   const supabase = await createClient();
 
-  await assertWithinMailboxLimit(supabase, user.id, user.email);
+  try {
+    await assertWithinMailboxLimit(supabase, user.id, user.email);
+  } catch (error) {
+    if (error instanceof PlanLimitError) return { ok: false, error: error.message };
+    throw error;
+  }
 
   const mailbox = await createMailbox(supabase, {
     user_id: user.id,
@@ -72,6 +80,7 @@ export async function createMailboxAction(input: MailboxInput) {
 
   revalidatePath("/mailboxes");
   revalidatePath("/dashboard");
+  return { ok: true, data: undefined };
 }
 
 export async function updateMailboxAction(id: string, input: MailboxInput) {

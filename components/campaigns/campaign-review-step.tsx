@@ -10,6 +10,7 @@ import type { MailboxSafe } from "@/lib/db";
 import type { CampaignReadinessResult } from "@/lib/campaigns/readiness";
 import { isOvernightWindow, type SendingWindow } from "@/lib/validations/sending-window";
 import { launchCampaignAction } from "@/app/(app)/campaigns/[campaignId]/actions";
+import { unwrapActionResult } from "@/lib/action-result";
 import { validateSequenceTemplates } from "@/lib/email/validate-template";
 import type { MergeTagLead } from "@/lib/email/merge-tags";
 import { formatBytes } from "@/lib/email/attachment-validation";
@@ -95,7 +96,7 @@ export function CampaignReviewStep({
   function handleLaunch() {
     startTransition(async () => {
       try {
-        await launchCampaignAction(campaign.id);
+        unwrapActionResult(await launchCampaignAction(campaign.id));
         toast.success("Campaign launched.");
         router.refresh();
       } catch (error) {

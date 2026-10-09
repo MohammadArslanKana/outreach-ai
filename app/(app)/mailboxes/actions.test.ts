@@ -18,12 +18,16 @@ vi.mock("@/lib/db", () => ({
   updateMailbox: vi.fn(async (_supabase: unknown, _userId: string, id: string) => ({ id, email: "sender@example.test" })),
 }));
 vi.mock("@/lib/crypto/smtp-secret", () => ({ encryptSmtpPassword: (plain: string) => `enc(${plain})` }));
-vi.mock("@/lib/billing/limits", () => ({ assertWithinMailboxLimit: vi.fn() }));
+vi.mock("@/lib/billing/limits", () => ({
+  assertWithinMailboxLimit: vi.fn(),
+  PlanLimitError: class PlanLimitError extends Error {},
+}));
 vi.mock("@/lib/rate-limit/check-rate-limit", () => ({ checkRateLimit: vi.fn(), RateLimitError: class extends Error {} }));
 
-import { getMailbox, getMailboxImapCredential, recordAuditEvent, updateMailbox } from "@/lib/db";
+import { createMailbox, getMailbox, getMailboxImapCredential, recordAuditEvent, updateMailbox } from "@/lib/db";
+import { assertWithinMailboxLimit, PlanLimitError } from "@/lib/billing/limits";
 import type { MailboxInput } from "@/lib/validations/mailboxes";
-import { updateMailboxAction } from "./actions";
+import { createMailboxAction, updateMailboxAction } from "./actions";
 
 // What mailbox-form.tsx submits when editing: the row's existing values
 // carried through, with only the status changed.
@@ -54,6 +58,21 @@ function updatedValues() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+// Returned rather than thrown: a thrown Server Function error's message is
+// redacted in production — see lib/action-result.ts.
+describe("createMailboxAction — plan limit", () => {
+  it("returns the mailbox-limit message and connects nothing", async () => {
+    const message = "Your account has no active subscription. The current limit allows up to 1 mailbox. Upgrade to add more.";
+    vi.mocked(assertWithinMailboxLimit).mockRejectedValueOnce(new PlanLimitError(message));
+
+    const result = await createMailboxAction({ ...formInput, smtpPassword: "app-password", imapEnabled: false });
+
+    expect(result).toEqual({ ok: false, error: message });
+    expect(createMailbox).not.toHaveBeenCalled();
+    expect(recordAuditEvent).not.toHaveBeenCalled();
+  });
 });
 
 describe("updateMailboxAction — OAuth mailboxes", () => {

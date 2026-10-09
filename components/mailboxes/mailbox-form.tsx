@@ -15,6 +15,7 @@ import {
   testSmtpConnectionAction,
   updateMailboxAction,
 } from "@/app/(app)/mailboxes/actions";
+import { ActionError, unwrapActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -137,16 +138,20 @@ export function MailboxForm({ mode, mailbox, domains, onSuccess }: MailboxFormPr
     startTransition(async () => {
       try {
         if (mode === "create") {
-          await createMailboxAction(values);
+          unwrapActionResult(await createMailboxAction(values));
           toast.success("Mailbox connected.");
         } else {
           await updateMailboxAction(mailbox.id, values);
           toast.success("Mailbox updated.");
         }
         onSuccess();
-      } catch {
+      } catch (error) {
         toast.error(
-          mode === "create" ? "Couldn't connect the mailbox. Try again." : "Couldn't update the mailbox. Try again.",
+          error instanceof ActionError
+            ? error.message
+            : mode === "create"
+              ? "Couldn't connect the mailbox. Try again."
+              : "Couldn't update the mailbox. Try again.",
         );
       }
     });

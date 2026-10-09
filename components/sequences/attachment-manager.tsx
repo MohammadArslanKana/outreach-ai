@@ -13,6 +13,7 @@ import {
   type SupportedAttachmentMimeType,
 } from "@/lib/email/attachment-validation";
 import { removeAttachmentAction, uploadAttachmentAction } from "@/app/(app)/campaigns/[campaignId]/actions";
+import { ActionError, unwrapActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 
 export interface AttachmentSummary {
@@ -96,7 +97,7 @@ export function AttachmentManager({
       try {
         const formData = new FormData();
         formData.append("file", file);
-        const uploaded = await uploadAttachmentAction(formData);
+        const uploaded = unwrapActionResult(await uploadAttachmentAction(formData));
         onChange([...attachments, uploaded]);
         onUploaded?.(uploaded.id);
       } catch (error) {
@@ -109,10 +110,10 @@ export function AttachmentManager({
     setRemovingId(attachmentId);
     startRemoveTransition(async () => {
       try {
-        await removeAttachmentAction(attachmentId);
+        unwrapActionResult(await removeAttachmentAction(attachmentId));
         onChange(attachments.filter((attachment) => attachment.id !== attachmentId));
-      } catch {
-        toast.error("Couldn't remove this attachment. Try again.");
+      } catch (error) {
+        toast.error(error instanceof ActionError ? error.message : "Couldn't remove this attachment. Try again.");
       } finally {
         setRemovingId(null);
       }
