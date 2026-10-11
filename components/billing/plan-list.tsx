@@ -33,7 +33,9 @@ const INTERVAL_LABEL: Record<BillingInterval, string> = {
 function DisabledAction({ label, note }: { label: string; note: string }) {
   return (
     <>
-      <Button variant="outline" className="w-full" disabled>
+      {/* Wraps rather than overflowing the narrow plan cards — these labels
+          are longer than the regular checkout button's. */}
+      <Button variant="outline" className="h-auto min-h-9 w-full whitespace-normal py-2 text-center" disabled>
         {label}
       </Button>
       <p className="text-center text-xs text-muted-foreground">{note}</p>

@@ -6,6 +6,7 @@ import { GMAIL_SMTP_HOST, GMAIL_SMTP_PORT } from "@/lib/email/google-constants";
 import { MicrosoftOAuthError, refreshMicrosoftAccessToken } from "@/lib/email/microsoft-oauth";
 import { OUTLOOK_SMTP_HOST, OUTLOOK_SMTP_PORT } from "@/lib/email/microsoft-constants";
 import { normalizeMessageId } from "@/lib/email/message-id";
+import { assertPublicMailHost, MailHostNotAllowedError } from "@/lib/email/mail-host-guard";
 import type { Tables } from "@/types/database.types";
 import { EmailSendError, type EmailProvider, type OutboundEmailMessage, type SendResult } from "../provider";
 
@@ -231,6 +232,15 @@ async function resolveSmtpConnection(mailbox: Mailbox) {
     };
   }
 
+  // Only this branch connects to a user-supplied host — see mail-host-guard.ts.
+  // A disallowed host is a mailbox configuration problem: "failed" +
+  // mailboxIssue, so the send worker stops the mailbox instead of retrying.
+  try {
+    await assertPublicMailHost(mailbox.smtp_host);
+  } catch (error) {
+    if (error instanceof MailHostNotAllowedError) throw new EmailSendError(error.message, "failed", true);
+    throw error;
+  }
   const password = decryptSmtpPassword(mailbox.encrypted_smtp_password ?? "");
   return {
     host: mailbox.smtp_host,

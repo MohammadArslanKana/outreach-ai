@@ -3,6 +3,7 @@ import { simpleParser } from "mailparser";
 import type { AddressObject, SimpleParserOptions } from "mailparser";
 
 import { decryptSmtpPassword } from "@/lib/crypto/smtp-secret";
+import { assertPublicMailHost } from "@/lib/email/mail-host-guard";
 import { refreshGoogleAccessToken } from "@/lib/email/google-oauth";
 import { GMAIL_IMAP_HOST, GMAIL_IMAP_PORT } from "@/lib/email/google-constants";
 import { refreshMicrosoftAccessToken } from "@/lib/email/microsoft-oauth";
@@ -109,6 +110,8 @@ async function resolveImapConnection(mailbox: Mailbox) {
     };
   }
 
+  // Only this branch connects to a user-supplied host — see mail-host-guard.ts.
+  await assertPublicMailHost(mailbox.imap_host ?? "");
   const password = decryptSmtpPassword(mailbox.encrypted_imap_password ?? "");
   return {
     host: mailbox.imap_host ?? "",
