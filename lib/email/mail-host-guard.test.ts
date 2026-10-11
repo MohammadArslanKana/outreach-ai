@@ -52,7 +52,25 @@ describe("isBlockedAddress", () => {
 });
 
 describe("assertPublicMailHost", () => {
-  it.each(["localhost", "mail.localhost", "127.0.0.1", "[::1]", "169.254.169.254", " "])(
+  it.each([
+    "localhost",
+    "localhost.",
+    "mail.localhost",
+    "127.0.0.1",
+    "[::1]",
+    "169.254.169.254",
+    " ",
+    // Alternate IPv4 spellings glibc resolves to an address
+    "2130706433",
+    "127.1",
+    "0x7f000001",
+    "0177.0.0.1",
+    "0x7f.0.0.1",
+    // IPv4-compatible / -mapped IPv6
+    "::7f00:1",
+    "::ffff:7f00:1",
+    "[::ffff:169.254.169.254]",
+  ])(
     "rejects %s without a DNS lookup",
     async (host) => {
       await expect(assertPublicMailHost(host)).rejects.toBeInstanceOf(MailHostNotAllowedError);
