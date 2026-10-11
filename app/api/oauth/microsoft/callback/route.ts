@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/supabase/auth";
+import { getUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createMailbox, getMailboxByUserAndEmail, getUserOrganization, recordAuditEvent, updateMailbox } from "@/lib/db";
 import { assertWithinMailboxLimit, PlanLimitError } from "@/lib/billing/limits";
@@ -56,7 +56,16 @@ export async function GET(request: NextRequest) {
   // trust anything from Microsoft's response for identity (Microsoft only
   // proves which Microsoft account consented, never which outreach-ai user
   // started this flow).
-  const user = await requireUser();
+  const user = await getUser();
+  if (!user) {
+    // The session ended during the round trip to the provider — send the
+    // user to sign in again instead of failing with a 500.
+    const url = new URL("/login", request.url);
+    url.searchParams.set("error", "Your session expired. Sign in and connect the mailbox again.");
+    const response = NextResponse.redirect(url);
+    response.cookies.delete(STATE_COOKIE_NAME);
+    return response;
+  }
   const supabase = await createClient();
 
   try {

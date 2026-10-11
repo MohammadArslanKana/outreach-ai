@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/supabase/auth";
+import { getUser } from "@/lib/supabase/auth";
 import { buildMicrosoftAuthUrl } from "@/lib/email/microsoft-oauth";
 
 // Route Handler, not a Server Function — this needs to redirect the
@@ -10,11 +10,14 @@ import { buildMicrosoftAuthUrl } from "@/lib/email/microsoft-oauth";
 export const STATE_COOKIE_NAME = "microsoft_oauth_state";
 const STATE_COOKIE_MAX_AGE_SECONDS = 600; // 10 minutes — just long enough for the round trip to Microsoft and back
 
-// requireUser() throws for an unauthenticated request; app/(app)/layout.tsx
-// already gates the /mailboxes page this link starts from, but Route
-// Handlers are reachable directly, so this re-checks independently.
+// app/(app)/layout.tsx already gates the /mailboxes page this link starts
+// from, but Route Handlers are reachable directly, so this re-checks
+// independently. A signed-out visitor is sent to sign in, not shown a 500.
 export async function GET(request: NextRequest) {
-  await requireUser();
+  const user = await getUser();
+  if (!user) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
 
   // A random, unguessable value stored in a cookie only this browser can
   // read back (httpOnly) and only over this flow's short lifetime — the
