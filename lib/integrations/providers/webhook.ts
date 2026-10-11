@@ -1,3 +1,4 @@
+import { assertPublicMailHost, MailHostNotAllowedError } from "@/lib/email/mail-host-guard";
 import { IntegrationDeliveryError, type IntegrationDeliveryResult, type IntegrationPayload, type IntegrationProvider } from "../provider";
 
 // Bounds how long a single delivery attempt can hang — a slow/unreachable
@@ -23,13 +24,22 @@ export class WebhookIntegrationProvider implements IntegrationProvider {
 
     let response: Response;
     try {
+      // lib/validations/integrations.ts rejects private hostnames typed
+      // literally; this also catches a name that resolves to one. Redirects
+      // aren't followed, so a public URL can't bounce the POST to an
+      // internal address either — a 3xx is reported as a failed delivery.
+      await assertPublicMailHost(new URL(this.config.url).hostname);
       response = await fetch(this.config.url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal,
+        redirect: "manual",
       });
     } catch (error) {
+      if (error instanceof MailHostNotAllowedError) {
+        throw new IntegrationDeliveryError("The webhook URL points to a private address, which isn't allowed.", "failed");
+      }
       // Network error, DNS failure, or the abort above — all transient
       // from this destination's perspective, not a reason to stop trying
       // on the next scheduled run.
