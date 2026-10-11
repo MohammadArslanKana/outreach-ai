@@ -29,6 +29,21 @@ import { getActiveSubscriptionView } from "@/lib/billing/subscription-view";
 import { currencyForRegion, getBillingRegion } from "@/lib/billing/region";
 import { checkoutSchema, razorpaySubscriptionIdSchema, type CheckoutInput } from "@/lib/validations/billing";
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit/check-rate-limit";
+import type { ActionResult } from "@/lib/action-result";
+
+// A message written for the customer. The exported actions return these
+// (and RateLimitError's) as values: Next.js production builds replace a
+// thrown Server Function error's message with an opaque digest, so a thrown
+// "Another checkout is already in progress..." would reach the browser as a
+// generic error — see lib/action-result.ts. Anything else still throws.
+class BillingActionError extends Error {}
+
+function toActionError(error: unknown): { ok: false; error: string } {
+  if (error instanceof BillingActionError || error instanceof RateLimitError) {
+    return { ok: false, error: error.message };
+  }
+  throw error;
+}
 
 // Why an offering can't be bought, in words the customer can act on. Which
 // env var is missing goes to the server log, never to the client.
@@ -66,16 +81,16 @@ async function resumeCheckoutSubscription(
       : "Razorpay returned a different subscription than requested";
     if (mismatch) {
       console.error("[razorpay] open checkout's subscription doesn't match the offering", providerSubscriptionId, mismatch);
-      throw new Error(CHECKOUT_NOT_RESUMABLE_MESSAGE);
+      throw new BillingActionError(CHECKOUT_NOT_RESUMABLE_MESSAGE);
     }
     // "created" is the only state checkout.js can still authenticate. Any
     // other means it was already paid (the webhook will confirm it) or ended.
-    if (subscription.status !== "created") throw new Error(CHECKOUT_NOT_RESUMABLE_MESSAGE);
+    if (subscription.status !== "created") throw new BillingActionError(CHECKOUT_NOT_RESUMABLE_MESSAGE);
     return subscription.id;
   } catch (error) {
-    if (error instanceof Error && error.message === CHECKOUT_NOT_RESUMABLE_MESSAGE) throw error;
+    if (error instanceof BillingActionError && error.message === CHECKOUT_NOT_RESUMABLE_MESSAGE) throw error;
     console.error("[razorpay] failed to re-fetch open checkout's subscription", error);
-    throw new Error("Couldn't start checkout. Try again shortly or contact support.");
+    throw new BillingActionError("Couldn't start checkout. Try again shortly or contact support.");
   }
 }
 
@@ -97,6 +112,16 @@ async function resumeCheckoutSubscription(
 // authentication, not by this server action.
 export async function createRazorpaySubscriptionAction(
   input: CheckoutInput,
+): Promise<ActionResult<{ subscriptionId: string; prefillEmail: string | undefined }>> {
+  try {
+    return { ok: true, data: await startRazorpayCheckout(input) };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+async function startRazorpayCheckout(
+  input: CheckoutInput,
 ): Promise<{ subscriptionId: string; prefillEmail: string | undefined }> {
   const parsed = checkoutSchema.parse(input);
   const user = await requireUser();
@@ -104,7 +129,7 @@ export async function createRazorpaySubscriptionAction(
 
   const organization = await getUserOrganization(supabase, user);
   if (isInternalUnlimitedOrganization(organization.id)) {
-    throw new Error("This workspace already has unlimited access.");
+    throw new BillingActionError("This workspace already has unlimited access.");
   }
   await checkRateLimit("billing:checkout", organization.id);
 
@@ -119,7 +144,7 @@ export async function createRazorpaySubscriptionAction(
     if (offering.availability === "not_configured") {
       console.error(`[razorpay] checkout unavailable: ${offering.razorpayPlanEnvVar} is not set`);
     }
-    throw new Error(unavailableMessage(offering));
+    throw new BillingActionError(unavailableMessage(offering));
   }
 
   // Duplicate-checkout guard: block starting a second subscription while a
@@ -129,7 +154,7 @@ export async function createRazorpaySubscriptionAction(
   // remains the backstop against two *confirmed* rows ever coexisting.
   const existing = await getSubscriptionV2(supabase, organization.id);
   if (existing && NON_TERMINAL_STATUSES.has(existing.normalized_status)) {
-    throw new Error("You already have an active subscription. Manage it from the Billing page instead.");
+    throw new BillingActionError("You already have an active subscription. Manage it from the Billing page instead.");
   }
 
   // The check above can't see a checkout that's been started but not yet
@@ -141,7 +166,7 @@ export async function createRazorpaySubscriptionAction(
     await checkRateLimit("billing:checkout_start", organization.id);
   } catch (error) {
     if (error instanceof RateLimitError) {
-      throw new Error(
+      throw new BillingActionError(
         "A checkout was just started for this workspace. Finish it in the payment window that's already open, or try again in a couple of minutes.",
       );
     }
@@ -162,7 +187,7 @@ export async function createRazorpaySubscriptionAction(
     currency: offering.currency,
   });
   if (claim.outcome === "conflict") {
-    throw new Error(
+    throw new BillingActionError(
       "Another checkout is already in progress for this workspace. Finish it, or wait up to 30 minutes for it to expire, before choosing a different plan or duration.",
     );
   }
@@ -170,7 +195,7 @@ export async function createRazorpaySubscriptionAction(
     // No provider id yet: another request holds the claim and is creating
     // the subscription right now (or crashed mid-way — the claim's 30-minute
     // expiry is what eventually frees it). Never create a second one here.
-    if (claim.providerSubscriptionId === null) throw new Error(CHECKOUT_IN_PROGRESS_MESSAGE);
+    if (claim.providerSubscriptionId === null) throw new BillingActionError(CHECKOUT_IN_PROGRESS_MESSAGE);
     const subscriptionId = await resumeCheckoutSubscription(claim.providerSubscriptionId, {
       organizationId: organization.id,
       planId: parsed.planId,
@@ -216,7 +241,7 @@ export async function createRazorpaySubscriptionAction(
     } catch (releaseError) {
       console.error("[razorpay] failed to release checkout after a failed create", claim.checkoutId, releaseError);
     }
-    throw new Error("Couldn't start checkout. Try again shortly or contact support.");
+    throw new BillingActionError("Couldn't start checkout. Try again shortly or contact support.");
   }
 
   // The subscription exists at Razorpay now, so the customer can still pay
@@ -257,7 +282,16 @@ export async function createRazorpaySubscriptionAction(
 // reflect that a cancellation is pending, which is worse than the
 // confirmation dialog this pairs with (ManageRazorpaySubscriptionButton)
 // being explicit that cancelling takes effect now.
-export async function cancelRazorpaySubscriptionAction(): Promise<void> {
+export async function cancelRazorpaySubscriptionAction(): Promise<ActionResult> {
+  try {
+    await cancelRazorpaySubscription();
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+async function cancelRazorpaySubscription(): Promise<void> {
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -266,17 +300,17 @@ export async function cancelRazorpaySubscriptionAction(): Promise<void> {
 
   const subscription = await getSubscriptionV2(supabase, organization.id);
   if (!subscription || subscription.provider !== "razorpay") {
-    throw new Error("No active Razorpay subscription found.");
+    throw new BillingActionError("No active Razorpay subscription found.");
   }
   if (!NON_TERMINAL_STATUSES.has(subscription.normalized_status)) {
-    throw new Error("This subscription is already cancelled or inactive.");
+    throw new BillingActionError("This subscription is already cancelled or inactive.");
   }
 
   try {
     await getRazorpayClient().subscriptions.cancel(subscription.provider_subscription_id, false);
   } catch (error) {
     console.error("[razorpay] failed to cancel subscription", error);
-    throw new Error("Couldn't cancel the subscription. Try again shortly or contact support.");
+    throw new BillingActionError("Couldn't cancel the subscription. Try again shortly or contact support.");
   }
 }
 

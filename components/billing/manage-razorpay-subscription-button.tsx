@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ActionError, unwrapActionResult } from "@/lib/action-result";
 
 import { cancelRazorpaySubscriptionAction } from "@/app/(app)/billing/razorpay-actions";
 import { Button } from "@/components/ui/button";
@@ -42,13 +43,13 @@ export function ManageRazorpaySubscriptionButton() {
   function handleCancel() {
     startTransition(async () => {
       try {
-        await cancelRazorpaySubscriptionAction();
+        unwrapActionResult(await cancelRazorpaySubscriptionAction());
         setCancelled(true);
         toast.success("Subscription cancelled.");
         setOpen(false);
         router.refresh();
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Couldn't cancel the subscription.");
+        toast.error(error instanceof ActionError ? error.message : "Couldn't cancel the subscription.");
       }
     });
   }

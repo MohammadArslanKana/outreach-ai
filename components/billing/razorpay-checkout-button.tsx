@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
+import { ActionError, unwrapActionResult } from "@/lib/action-result";
 
 import type { BillingInterval, PaidPlanId } from "@/lib/billing/plans";
 import { awaitSubscriptionConfirmation } from "@/lib/billing/await-subscription-confirmation";
@@ -123,16 +124,18 @@ export function RazorpayCheckoutButton({
     startTransition(async () => {
       setIsOpening(true);
       try {
-        const { subscriptionId, prefillEmail } = await createRazorpaySubscriptionAction({ planId, interval });
+        const { subscriptionId, prefillEmail } = unwrapActionResult(
+          await createRazorpaySubscriptionAction({ planId, interval }),
+        );
 
         const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
         if (!keyId) {
-          throw new Error("Checkout is temporarily unavailable. Try again shortly or contact support.");
+          throw new ActionError("Checkout is temporarily unavailable. Try again shortly or contact support.");
         }
 
         await loadCheckoutScript();
         if (!window.Razorpay) {
-          throw new Error("Couldn't load checkout. Try again.");
+          throw new ActionError("Couldn't load checkout. Try again.");
         }
 
         const checkout = new window.Razorpay({
@@ -155,7 +158,9 @@ export function RazorpayCheckoutButton({
         checkout.open();
       } catch (error) {
         setIsOpening(false);
-        toast.error(error instanceof Error ? error.message : "Couldn't start checkout. Try again.");
+        // Only purpose-written messages are shown; anything else (e.g. a
+        // production-redacted server error) gets the generic fallback.
+        toast.error(error instanceof ActionError ? error.message : "Couldn't start checkout. Try again.");
       }
     });
   }
