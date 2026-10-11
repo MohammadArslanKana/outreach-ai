@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { PauseIcon, PlayIcon, SquareIcon } from "lucide-react";
 
 import { pauseCampaignAction, resumeCampaignAction, stopCampaignAction } from "@/app/(app)/campaigns/[campaignId]/actions";
+import { unwrapActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,7 +35,7 @@ export function CampaignExecutionControls({
   function handlePause() {
     startTransition(async () => {
       try {
-        await pauseCampaignAction(campaignId);
+        unwrapActionResult(await pauseCampaignAction(campaignId));
         toast.success("Campaign paused.");
         router.refresh();
       } catch (error) {
@@ -46,7 +47,7 @@ export function CampaignExecutionControls({
   function handleResume() {
     startTransition(async () => {
       try {
-        await resumeCampaignAction(campaignId);
+        unwrapActionResult(await resumeCampaignAction(campaignId));
         toast.success("Campaign resumed.");
         router.refresh();
       } catch (error) {
@@ -58,7 +59,7 @@ export function CampaignExecutionControls({
   function handleStop() {
     startTransition(async () => {
       try {
-        await stopCampaignAction(campaignId);
+        unwrapActionResult(await stopCampaignAction(campaignId));
         toast.success("Campaign stopped.");
         setStopOpen(false);
         router.refresh();

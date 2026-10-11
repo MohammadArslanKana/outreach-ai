@@ -15,19 +15,27 @@ import {
 import { campaignSchema, type CampaignInput } from "@/lib/validations/campaigns";
 import { resolveLeadSendingWindow, resolveSendingWindow, recomputeNextSendAt } from "@/lib/email/scheduling";
 import type { SendingWindow } from "@/lib/validations/sending-window";
-import { assertWithinCampaignLimit, assertWithinDailySendLimit } from "@/lib/billing/limits";
+import { assertWithinCampaignLimit, assertWithinDailySendLimit, PlanLimitError } from "@/lib/billing/limits";
+import type { ActionResult } from "@/lib/action-result";
 
 // Server Functions are reachable directly via POST regardless of which UI
 // calls them, so re-validate here even though the client form (react-hook-
 // form + the same zod schema) already validated this input.
 
-export async function createCampaignAction(input: CampaignInput) {
+// A plan limit is an expected outcome the user can act on (lower the limit or
+// upgrade), so it's returned rather than thrown — see lib/action-result.ts.
+export async function createCampaignAction(input: CampaignInput): Promise<ActionResult<{ id: string }>> {
   const parsed = campaignSchema.parse(input);
   const user = await requireUser();
   const supabase = await createClient();
 
-  await assertWithinCampaignLimit(supabase, user.id, user.email);
-  await assertWithinDailySendLimit(supabase, user.id, user.email, parsed.dailyLimit);
+  try {
+    await assertWithinCampaignLimit(supabase, user.id, user.email);
+    await assertWithinDailySendLimit(supabase, user.id, user.email, parsed.dailyLimit);
+  } catch (error) {
+    if (error instanceof PlanLimitError) return { ok: false, error: error.message };
+    throw error;
+  }
 
   const campaign = await createCampaign(supabase, {
     user_id: user.id,
@@ -39,7 +47,7 @@ export async function createCampaignAction(input: CampaignInput) {
   });
 
   revalidatePath("/campaigns");
-  return { id: campaign.id };
+  return { ok: true, data: { id: campaign.id } };
 }
 
 // Re-snaps every still-queued campaign_lead's next_send_at into the newly
@@ -81,12 +89,17 @@ async function rescheduleQueuedCampaignLeads(supabase: Client, campaignId: strin
   );
 }
 
-export async function updateCampaignAction(id: string, input: CampaignInput) {
+export async function updateCampaignAction(id: string, input: CampaignInput): Promise<ActionResult> {
   const parsed = campaignSchema.parse(input);
   const user = await requireUser();
   const supabase = await createClient();
 
-  await assertWithinDailySendLimit(supabase, user.id, user.email, parsed.dailyLimit, id);
+  try {
+    await assertWithinDailySendLimit(supabase, user.id, user.email, parsed.dailyLimit, id);
+  } catch (error) {
+    if (error instanceof PlanLimitError) return { ok: false, error: error.message };
+    throw error;
+  }
 
   // Read before write so the schedule-recompute below only ever runs when
   // the sending window actually changed — see rescheduleQueuedCampaignLeads.
@@ -107,6 +120,7 @@ export async function updateCampaignAction(id: string, input: CampaignInput) {
 
   revalidatePath("/campaigns");
   revalidatePath(`/campaigns/${id}`);
+  return { ok: true, data: undefined };
 }
 
 export async function deleteCampaignAction(id: string) {

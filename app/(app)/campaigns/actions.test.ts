@@ -24,12 +24,14 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/billing/limits", () => ({
   assertWithinCampaignLimit: vi.fn(),
   assertWithinDailySendLimit: vi.fn(),
+  PlanLimitError: class PlanLimitError extends Error {},
 }));
 
+import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/supabase/auth";
-import { getCampaign, listCampaignLeadsWithTimezones, updateCampaign, updateCampaignLead } from "@/lib/db";
-import { assertWithinDailySendLimit } from "@/lib/billing/limits";
-import { updateCampaignAction } from "./actions";
+import { createCampaign, getCampaign, listCampaignLeadsWithTimezones, updateCampaign, updateCampaignLead } from "@/lib/db";
+import { assertWithinCampaignLimit, assertWithinDailySendLimit, PlanLimitError } from "@/lib/billing/limits";
+import { createCampaignAction, updateCampaignAction } from "./actions";
 import type { SendingWindow } from "@/lib/validations/sending-window";
 import type { Tables } from "@/types/database.types";
 
@@ -39,6 +41,9 @@ const mockListCampaignLeadsWithTimezones = vi.mocked(listCampaignLeadsWithTimezo
 const mockUpdateCampaign = vi.mocked(updateCampaign);
 const mockUpdateCampaignLead = vi.mocked(updateCampaignLead);
 const mockAssertWithinDailySendLimit = vi.mocked(assertWithinDailySendLimit);
+const mockAssertWithinCampaignLimit = vi.mocked(assertWithinCampaignLimit);
+const mockCreateCampaign = vi.mocked(createCampaign);
+const mockRevalidatePath = vi.mocked(revalidatePath);
 
 const USER = { id: "user-1", email: "owner@example.com" };
 
@@ -92,10 +97,64 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockRequireUser.mockResolvedValue(USER as never);
   mockAssertWithinDailySendLimit.mockResolvedValue(undefined as never);
+  mockAssertWithinCampaignLimit.mockResolvedValue(undefined as never);
+  mockCreateCampaign.mockResolvedValue(makeCampaign() as never);
   mockUpdateCampaign.mockResolvedValue(makeCampaign() as never);
   mockUpdateCampaignLead.mockImplementation(async (_supabase, id, values) =>
     ({ ...makeCampaignLead({ id }), ...values }) as never,
   );
+});
+
+// A thrown Server Function error reaches the browser in production with its
+// message redacted, so a plan limit must come back as a value for the user to
+// ever see the upgrade guidance — see lib/action-result.ts.
+describe("plan limits are returned to the user, not thrown", () => {
+  const CAMPAIGN_LIMIT =
+    "Your account has no active subscription. The current limit allows up to 1 campaign. Upgrade to add more.";
+  const DAILY_SEND_LIMIT =
+    "Your account has no active subscription. The current limit allows up to 50 total daily sends across all campaigns (currently configured: 50). Lower this campaign's daily limit or upgrade.";
+
+  it("returns the campaign-count limit message and creates nothing", async () => {
+    mockAssertWithinCampaignLimit.mockRejectedValue(new PlanLimitError(CAMPAIGN_LIMIT));
+
+    const result = await createCampaignAction({ ...BASE_INPUT, sendingWindow: UTC_9_TO_5 });
+
+    expect(result).toEqual({ ok: false, error: CAMPAIGN_LIMIT });
+    expect(mockCreateCampaign).not.toHaveBeenCalled();
+    expect(mockRevalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("returns the daily-send limit message on create and creates nothing", async () => {
+    mockAssertWithinDailySendLimit.mockRejectedValue(new PlanLimitError(DAILY_SEND_LIMIT));
+
+    const result = await createCampaignAction({ ...BASE_INPUT, sendingWindow: UTC_9_TO_5 });
+
+    expect(result).toEqual({ ok: false, error: DAILY_SEND_LIMIT });
+    expect(mockCreateCampaign).not.toHaveBeenCalled();
+  });
+
+  it("returns the daily-send limit message on update and changes nothing", async () => {
+    mockAssertWithinDailySendLimit.mockRejectedValue(new PlanLimitError(DAILY_SEND_LIMIT));
+
+    const result = await updateCampaignAction("campaign-1", { ...BASE_INPUT, sendingWindow: UTC_9_TO_5 });
+
+    expect(result).toEqual({ ok: false, error: DAILY_SEND_LIMIT });
+    expect(mockUpdateCampaign).not.toHaveBeenCalled();
+    expect(mockRevalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("returns the new campaign's id on success", async () => {
+    const result = await createCampaignAction({ ...BASE_INPUT, sendingWindow: UTC_9_TO_5 });
+
+    expect(result).toEqual({ ok: true, data: { id: "campaign-1" } });
+  });
+
+  it("still throws an unexpected failure instead of returning its internal message", async () => {
+    mockAssertWithinCampaignLimit.mockRejectedValue(new Error('relation "campaigns" does not exist'));
+
+    await expect(createCampaignAction({ ...BASE_INPUT, sendingWindow: UTC_9_TO_5 })).rejects.toThrow(/relation/);
+    expect(mockCreateCampaign).not.toHaveBeenCalled();
+  });
 });
 
 describe("updateCampaignAction — schedule-edit recompute", () => {

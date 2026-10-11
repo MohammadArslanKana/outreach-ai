@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type { Tables } from "@/types/database.types";
 import { LEAD_STATUSES, leadSchema, type LeadInput } from "@/lib/validations/leads";
 import { createLeadAction, updateLeadAction } from "@/app/(app)/leads/actions";
+import { ActionError, unwrapActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -57,15 +58,21 @@ export function LeadForm({ mode, lead, leadLists, onSuccess }: LeadFormProps) {
     startTransition(async () => {
       try {
         if (mode === "create") {
-          await createLeadAction(values);
+          unwrapActionResult(await createLeadAction(values));
           toast.success("Lead added.");
         } else {
           await updateLeadAction(lead.id, values);
           toast.success("Lead updated.");
         }
         onSuccess();
-      } catch {
-        toast.error(mode === "create" ? "Couldn't add the lead. Try again." : "Couldn't update the lead. Try again.");
+      } catch (error) {
+        toast.error(
+          error instanceof ActionError
+            ? error.message
+            : mode === "create"
+              ? "Couldn't add the lead. Try again."
+              : "Couldn't update the lead. Try again.",
+        );
       }
     });
   }

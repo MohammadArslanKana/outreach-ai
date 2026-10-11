@@ -61,6 +61,7 @@ import { campaignLeadSchema, type CampaignLeadInput } from "@/lib/validations/ca
 import { leadSegmentRulesSchema } from "@/lib/validations/lead-segments";
 import { sequenceStepSchema, type SequenceStepInput } from "@/lib/validations/sequence-steps";
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit/check-rate-limit";
+import type { ActionResult } from "@/lib/action-result";
 
 // Server Functions are reachable directly via POST regardless of which UI
 // calls them. campaign_leads has no user_id column — ownership flows through
@@ -73,27 +74,31 @@ import { checkRateLimit, RateLimitError } from "@/lib/rate-limit/check-rate-limi
 // paused.") — never wraps a raw DB/PostgREST error, which unwrap() (see
 // lib/db/shared.ts) throws as a plain Error/PostgrestError instead. Client
 // components in this campaign's UI (enroll-dialog.tsx, campaign-lead-table.tsx,
-// campaign-execution-controls.tsx, campaign-review-step.tsx) show a caught
-// error's message directly via toast — see runUserFacing below for how an
-// unclassified error is kept from reaching them.
+// campaign-execution-controls.tsx, campaign-review-step.tsx) show the message
+// directly via toast — see runUserFacing below for how an unclassified error
+// is kept from reaching them.
 class UserFacingError extends Error {}
 
-// Wraps the exported actions below that a client component displays
-// error.message from. Only errors this file has explicitly classified as
-// safe (UserFacingError, RateLimitError — both purpose-written, no DB/
-// infrastructure detail) pass through with their message intact; anything
-// else (a raw PostgrestError from unwrap(), an unexpected bug) is logged in
-// full here — server-side only — and replaced with one generic message
-// before it can reach the browser.
-async function runUserFacing<T>(action: () => Promise<T>): Promise<T> {
+const UNEXPECTED_ERROR_MESSAGE = "Something went wrong. Try again.";
+
+// Wraps the exported actions below that a client component displays an
+// error message from. The failure is returned as a value rather than
+// rethrown: Next.js redacts a thrown Server Function error's message in
+// production builds (see lib/action-result.ts), which hid every one of these
+// messages behind a generic error. Only errors this file has explicitly
+// classified as safe (UserFacingError, RateLimitError — both purpose-written,
+// no DB/infrastructure detail) keep their message; anything else (a raw
+// PostgrestError from unwrap(), an unexpected bug) is logged in full here —
+// server-side only — and replaced with one generic message.
+async function runUserFacing<T>(action: () => Promise<T>): Promise<ActionResult<T>> {
   try {
-    return await action();
+    return { ok: true, data: await action() };
   } catch (error) {
     if (error instanceof UserFacingError || error instanceof RateLimitError) {
-      throw error;
+      return { ok: false, error: error.message };
     }
     console.error("[campaigns] unexpected error", error);
-    throw new Error("Something went wrong. Try again.");
+    return { ok: false, error: UNEXPECTED_ERROR_MESSAGE };
   }
 }
 

@@ -10,6 +10,7 @@ import type { Tables } from "@/types/database.types";
 import { CAMPAIGN_STATUSES, campaignSchema, type CampaignInput } from "@/lib/validations/campaigns";
 import { SENDING_WINDOW_DAYS, type SendingWindow } from "@/lib/validations/sending-window";
 import { createCampaignAction, updateCampaignAction } from "@/app/(app)/campaigns/actions";
+import { ActionError, unwrapActionResult } from "@/lib/action-result";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -80,17 +81,21 @@ export function CampaignForm({ mode, campaign, sendingWindow, mailboxes, onSucce
     startTransition(async () => {
       try {
         if (mode === "create") {
-          const created = await createCampaignAction(values);
+          const created = unwrapActionResult(await createCampaignAction(values));
           toast.success("Campaign created.");
           onSuccess?.(created.id);
         } else {
-          await updateCampaignAction(campaign.id, values);
+          unwrapActionResult(await updateCampaignAction(campaign.id, values));
           toast.success("Campaign updated.");
           onSuccess?.();
         }
-      } catch {
+      } catch (error) {
         toast.error(
-          mode === "create" ? "Couldn't create the campaign. Try again." : "Couldn't update the campaign. Try again.",
+          error instanceof ActionError
+            ? error.message
+            : mode === "create"
+              ? "Couldn't create the campaign. Try again."
+              : "Couldn't update the campaign. Try again.",
         );
       }
     });

@@ -17,6 +17,7 @@ import {
   sendNowAction,
   updateCampaignLeadAction,
 } from "@/app/(app)/campaigns/[campaignId]/actions";
+import { unwrapActionResult } from "@/lib/action-result";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -184,7 +185,7 @@ export function CampaignLeadTable({
     setResolvingId(row.id);
     startResolveTransition(async () => {
       try {
-        await resolveSendAttemptAction(campaignId, row.id, action);
+        unwrapActionResult(await resolveSendAttemptAction(campaignId, row.id, action));
         toast.success(action === "retry" ? "Lead queued for retry." : "Marked as resolved.");
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Couldn't resolve this lead.");
@@ -202,7 +203,7 @@ export function CampaignLeadTable({
     setSendingNowId(row.id);
     startSendNowTransition(async () => {
       try {
-        await sendNowAction(campaignId, row.id);
+        unwrapActionResult(await sendNowAction(campaignId, row.id));
         toast.success("Queued to send as soon as possible, subject to your mailbox limits.");
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Couldn't send this lead now.");

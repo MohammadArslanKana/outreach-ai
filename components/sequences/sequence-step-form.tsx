@@ -13,6 +13,7 @@ import {
   linkAttachmentsToStepAction,
   updateSequenceStepAction,
 } from "@/app/(app)/campaigns/[campaignId]/actions";
+import { unwrapActionResult } from "@/lib/action-result";
 import { findMalformedTags, findUnsupportedTags } from "@/lib/email/validate-template";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
@@ -145,10 +146,12 @@ export function SequenceStepForm({
         // immediately — see AttachmentManager), so `attachments` here is
         // exactly the step's final attachment set, not a diff.
         if (attachments.length > 0) {
-          await linkAttachmentsToStepAction(
-            campaignId,
-            stepId,
-            attachments.map((attachment) => attachment.id),
+          unwrapActionResult(
+            await linkAttachmentsToStepAction(
+              campaignId,
+              stepId,
+              attachments.map((attachment) => attachment.id),
+            ),
           );
         }
         setSaveSucceeded(true);
