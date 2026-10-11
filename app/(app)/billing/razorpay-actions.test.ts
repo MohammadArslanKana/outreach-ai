@@ -155,7 +155,7 @@ describe("cancelRazorpaySubscriptionAction", () => {
     mockGetSubscriptionV2.mockResolvedValue(razorpaySubscription() as never);
     const cancel = mockCancel(async () => ({ id: "sub_real_razorpay_id", status: "cancelled" }));
 
-    await expect(cancelRazorpaySubscriptionAction()).resolves.toBeUndefined();
+    await expect(cancelRazorpaySubscriptionAction()).resolves.toEqual({ ok: true, data: undefined });
 
     // Correct subscription id, and cancelAtCycleEnd=false (immediate) —
     // never the scheduled-cancellation variant this app doesn't support
@@ -175,7 +175,7 @@ describe("cancelRazorpaySubscriptionAction", () => {
     mockCheckRateLimit.mockRejectedValue(new RateLimitError(300));
     const cancel = mockCancel(async () => ({}));
 
-    await expect(cancelRazorpaySubscriptionAction()).rejects.toThrow(RateLimitError);
+    expect(await cancelRazorpaySubscriptionAction()).toEqual({ ok: false, error: new RateLimitError(300).message });
 
     expect(mockGetSubscriptionV2).not.toHaveBeenCalled();
     expect(cancel).not.toHaveBeenCalled();
@@ -213,7 +213,7 @@ describe("cancelRazorpaySubscriptionAction", () => {
     mockGetSubscriptionV2.mockResolvedValue(null as never);
     const cancel = mockCancel(async () => ({}));
 
-    await expect(cancelRazorpaySubscriptionAction()).rejects.toThrow(/no active razorpay subscription/i);
+    expect(await cancelRazorpaySubscriptionAction()).toEqual({ ok: false, error: expect.stringMatching(/no active razorpay subscription/i) });
 
     expect(cancel).not.toHaveBeenCalled();
   });
@@ -223,7 +223,7 @@ describe("cancelRazorpaySubscriptionAction", () => {
     mockGetSubscriptionV2.mockResolvedValue(razorpaySubscription({ provider: "stripe" }) as never);
     const cancel = mockCancel(async () => ({}));
 
-    await expect(cancelRazorpaySubscriptionAction()).rejects.toThrow(/no active razorpay subscription/i);
+    expect(await cancelRazorpaySubscriptionAction()).toEqual({ ok: false, error: expect.stringMatching(/no active razorpay subscription/i) });
 
     expect(cancel).not.toHaveBeenCalled();
   });
@@ -233,7 +233,7 @@ describe("cancelRazorpaySubscriptionAction", () => {
     mockGetSubscriptionV2.mockResolvedValue(razorpaySubscription({ normalized_status: "cancelled" }) as never);
     const cancel = mockCancel(async () => ({}));
 
-    await expect(cancelRazorpaySubscriptionAction()).rejects.toThrow(/already cancelled or inactive/i);
+    expect(await cancelRazorpaySubscriptionAction()).toEqual({ ok: false, error: expect.stringMatching(/already cancelled or inactive/i) });
 
     expect(cancel).not.toHaveBeenCalled();
   });
@@ -245,7 +245,7 @@ describe("cancelRazorpaySubscriptionAction", () => {
       mockGetSubscriptionV2.mockResolvedValue(razorpaySubscription({ normalized_status: normalizedStatus }) as never);
       const cancel = mockCancel(async () => ({}));
 
-      await expect(cancelRazorpaySubscriptionAction()).rejects.toThrow(/already cancelled or inactive/i);
+      expect(await cancelRazorpaySubscriptionAction()).toEqual({ ok: false, error: expect.stringMatching(/already cancelled or inactive/i) });
 
       expect(cancel).not.toHaveBeenCalled();
     },
@@ -258,9 +258,7 @@ describe("cancelRazorpaySubscriptionAction", () => {
       throw new Error("Razorpay 401: invalid key_secret for account acct_super_secret");
     });
 
-    await expect(cancelRazorpaySubscriptionAction()).rejects.toThrow(
-      "Couldn't cancel the subscription. Try again shortly or contact support.",
-    );
+    expect(await cancelRazorpaySubscriptionAction()).toEqual({ ok: false, error: "Couldn't cancel the subscription. Try again shortly or contact support." });
   });
 });
 
@@ -272,7 +270,7 @@ describe("createRazorpaySubscriptionAction", () => {
 
     const result = await createRazorpaySubscriptionAction(CHECKOUT_INPUT);
 
-    expect(result).toEqual({ subscriptionId: "sub_new_razorpay_id", prefillEmail: USER.email });
+    expect(result).toEqual({ ok: true, data: { subscriptionId: "sub_new_razorpay_id", prefillEmail: USER.email } });
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         plan_id: "plan_test_starter_1m",
@@ -290,7 +288,7 @@ describe("createRazorpaySubscriptionAction", () => {
     mockCheckRateLimit.mockRejectedValue(new RateLimitError(300));
     const create = mockCreate(async () => ({}));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(RateLimitError);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: new RateLimitError(300).message });
 
     expect(mockHeaders).not.toHaveBeenCalled();
     expect(mockGetSubscriptionV2).not.toHaveBeenCalled();
@@ -303,7 +301,7 @@ describe("createRazorpaySubscriptionAction", () => {
 
     for (const status of ["pending", "active", "past_due"]) {
       mockGetSubscriptionV2.mockResolvedValue(razorpaySubscription({ normalized_status: status }) as never);
-      await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/already have an active subscription/);
+      expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/already have an active subscription/) });
     }
     expect(create).not.toHaveBeenCalled();
   });
@@ -321,8 +319,8 @@ describe("createRazorpaySubscriptionAction — server-side region and currency",
     const create = mockCreate(() => Promise.resolve({ id: "sub_india" }));
 
     await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).resolves.toEqual({
-      subscriptionId: "sub_india",
-      prefillEmail: USER.email,
+      ok: true,
+      data: { subscriptionId: "sub_india", prefillEmail: USER.email },
     });
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -336,7 +334,7 @@ describe("createRazorpaySubscriptionAction — server-side region and currency",
     requestFrom(values as Record<string, string>);
     const create = mockCreate(() => Promise.resolve({ id: "sub_should_not_exist" }));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/International checkout isn't available yet/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/International checkout isn't available yet/) });
     expect(create).not.toHaveBeenCalled();
     expect(mockGetSubscriptionV2).not.toHaveBeenCalled();
   });
@@ -345,7 +343,7 @@ describe("createRazorpaySubscriptionAction — server-side region and currency",
     requestFrom({ "x-vercel-ip-country": "US", "accept-language": "hi-IN,en-IN;q=0.9" });
     const create = mockCreate(() => Promise.resolve({ id: "sub_should_not_exist" }));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/International checkout isn't available yet/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/International checkout isn't available yet/) });
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -354,7 +352,7 @@ describe("createRazorpaySubscriptionAction — server-side region and currency",
     const create = mockCreate(() => Promise.resolve({ id: "sub_should_not_exist" }));
     const forged = { ...CHECKOUT_INPUT, currency: "INR", provider: "razorpay", country: "IN", region: "india" };
 
-    await expect(createRazorpaySubscriptionAction(forged as never)).rejects.toThrow(/International checkout isn't available yet/);
+    expect(await createRazorpaySubscriptionAction(forged as never)).toEqual({ ok: false, error: expect.stringMatching(/International checkout isn't available yet/) });
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -378,7 +376,7 @@ describe("createRazorpaySubscriptionAction — server-side region and currency",
     requestFrom({ "x-vercel-ip-country": "IN" });
     const create = mockCreate(() => Promise.resolve({ id: "sub_should_not_exist" }));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/International checkout isn't available yet/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/International checkout isn't available yet/) });
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -392,7 +390,7 @@ describe("createRazorpaySubscriptionAction — server-side region and currency",
   it("still applies the billing:checkout rate limit before resolving the region", async () => {
     mockCheckRateLimit.mockRejectedValue(new RateLimitError(60));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toBeInstanceOf(RateLimitError);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: new RateLimitError(60).message });
     expect(mockHeaders).not.toHaveBeenCalled();
   });
 
@@ -400,7 +398,7 @@ describe("createRazorpaySubscriptionAction — server-side region and currency",
     mockGetSubscriptionV2.mockResolvedValue(razorpaySubscription({ normalized_status: "active" }) as never);
     const create = mockCreate(() => Promise.resolve({ id: "sub_second" }));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/already have an active subscription/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/already have an active subscription/) });
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -418,8 +416,8 @@ describe("createRazorpaySubscriptionAction — INR/USD plan resolution", () => {
     const create = mockCreate(() => Promise.resolve({ id: "sub_usd" }));
 
     await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).resolves.toEqual({
-      subscriptionId: "sub_usd",
-      prefillEmail: USER.email,
+      ok: true,
+      data: { subscriptionId: "sub_usd", prefillEmail: USER.email },
     });
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -433,7 +431,7 @@ describe("createRazorpaySubscriptionAction — INR/USD plan resolution", () => {
     requestFrom({ "x-vercel-ip-country": "DE" });
     const create = mockCreate(() => Promise.resolve({ id: "sub_should_not_exist" }));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/International checkout isn't available yet/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/International checkout isn't available yet/) });
     expect(create).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("RAZORPAY_PLAN_STARTER_1MONTH_USD is not set"));
   });
@@ -477,9 +475,7 @@ describe("createRazorpaySubscriptionAction — INR/USD plan resolution", () => {
   it("India: an unconfigured INR plan fails closed with the existing message", async () => {
     const create = mockCreate(() => Promise.resolve({ id: "sub_should_not_exist" }));
 
-    await expect(createRazorpaySubscriptionAction({ planId: "growth", interval: "1_month" })).rejects.toThrow(
-      /This plan isn't available yet/,
-    );
+    expect(await createRazorpaySubscriptionAction({ planId: "growth", interval: "1_month" })).toEqual({ ok: false, error: expect.stringMatching(/This plan isn't available yet/) });
     expect(create).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("RAZORPAY_PLAN_GROWTH_1MONTH is not set"));
   });
@@ -490,9 +486,7 @@ describe("createRazorpaySubscriptionAction — INR/USD plan resolution", () => {
       vi.stubEnv(`RAZORPAY_PLAN_SCALE_${interval === "6_month" ? "6" : "12"}MONTH`, "plan_inr_scale_long");
       const create = mockCreate(() => Promise.resolve({ id: "sub_should_not_exist" }));
 
-      await expect(createRazorpaySubscriptionAction({ planId: "scale", interval })).rejects.toThrow(
-        /isn't available for payments in India yet/,
-      );
+      expect(await createRazorpaySubscriptionAction({ planId: "scale", interval })).toEqual({ ok: false, error: expect.stringMatching(/isn't available for payments in India yet/) });
       expect(create).not.toHaveBeenCalled();
     },
   );
@@ -511,7 +505,7 @@ describe("createRazorpaySubscriptionAction — INR/USD plan resolution", () => {
     mockGetUserOrganization.mockResolvedValue({ id: "7ef89392-80ba-4447-a7b7-ba642ff00a53" } as never);
     const create = mockCreate(() => Promise.resolve({ id: "sub_should_not_exist" }));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/already has unlimited access/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/already has unlimited access/) });
     expect(mockCheckRateLimit).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
   });
@@ -539,16 +533,16 @@ describe("createRazorpaySubscriptionAction — concurrent checkout guard", () =>
     });
     const create = mockCreate(() => Promise.resolve({ id: "sub_second" }));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/A checkout was just started for this workspace/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/A checkout was just started for this workspace/) });
     expect(create).not.toHaveBeenCalled();
   });
 
   it("doesn't use up the window on a request rejected earlier (live subscription, unavailable plan)", async () => {
     mockGetSubscriptionV2.mockResolvedValue(razorpaySubscription({ normalized_status: "active" }) as never);
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/already have an active subscription/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/already have an active subscription/) });
 
     mockGetSubscriptionV2.mockResolvedValue(null);
-    await expect(createRazorpaySubscriptionAction({ planId: "pro", interval: "1_month" })).rejects.toThrow(/isn't available yet/);
+    expect(await createRazorpaySubscriptionAction({ planId: "pro", interval: "1_month" })).toEqual({ ok: false, error: expect.stringMatching(/isn't available yet/) });
 
     expect(mockCheckRateLimit).not.toHaveBeenCalledWith("billing:checkout_start", expect.anything());
   });
@@ -561,6 +555,30 @@ describe("createRazorpaySubscriptionAction — concurrent checkout guard", () =>
 
     await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow("db down");
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+describe("billing actions in production builds", () => {
+  // Next.js redacts a thrown Server Function message in production, so the
+  // customer-facing messages must come back as values (lib/action-result.ts).
+  it("returns a curated checkout message as a value instead of throwing it", async () => {
+    mockRequireUser.mockResolvedValue(USER as never);
+    mockGetSubscriptionV2.mockResolvedValue(razorpaySubscription({ normalized_status: "active" }) as never);
+
+    const result = await createRazorpaySubscriptionAction(CHECKOUT_INPUT);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "You already have an active subscription. Manage it from the Billing page instead.",
+    });
+  });
+
+  it("still throws an unexpected failure rather than returning its message", async () => {
+    mockRequireUser.mockResolvedValue(USER as never);
+    mockGetSubscriptionV2.mockRejectedValue(new Error("relation subscriptions_v2 does not exist"));
+
+    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow("relation subscriptions_v2 does not exist");
+    await expect(cancelRazorpaySubscriptionAction()).rejects.toThrow("relation subscriptions_v2 does not exist");
   });
 });
 
@@ -666,7 +684,7 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
 
     const result = await createRazorpaySubscriptionAction(CHECKOUT_INPUT);
 
-    expect(result.subscriptionId).toBe("sub_new");
+    expect(result).toMatchObject({ ok: true, data: { subscriptionId: "sub_new" } });
     expect(mockClaim).toHaveBeenCalledWith(expect.anything(), {
       organizationId: ORGANIZATION.id,
       internalPlanId: "starter",
@@ -699,9 +717,9 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
 
   it("never claims for a request rejected earlier (live subscription, unavailable offering)", async () => {
     mockGetSubscriptionV2.mockResolvedValueOnce(razorpaySubscription({ normalized_status: "active" }) as never);
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/already have an active subscription/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/already have an active subscription/) });
 
-    await expect(createRazorpaySubscriptionAction({ planId: "growth", interval: "1_month" })).rejects.toThrow();
+    expect((await createRazorpaySubscriptionAction({ planId: "growth", interval: "1_month" })).ok).toBe(false);
 
     expect(mockClaim).not.toHaveBeenCalled();
   });
@@ -711,9 +729,7 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
       throw { statusCode: 500, error: { description: "internal razorpay detail" } };
     });
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(
-      "Couldn't start checkout. Try again shortly or contact support.",
-    );
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: "Couldn't start checkout. Try again shortly or contact support." });
 
     expect(mockRelease).toHaveBeenCalledWith(expect.anything(), expect.objectContaining(CLAIM));
     expect(mockAttach).not.toHaveBeenCalled();
@@ -725,9 +741,7 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
     });
     mockRelease.mockRejectedValue(new Error("db down"));
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(
-      "Couldn't start checkout. Try again shortly or contact support.",
-    );
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: "Couldn't start checkout. Try again shortly or contact support." });
   });
 
   it("returns the created subscription even if attaching its id fails — it exists at Razorpay, so the claim is kept, not released", async () => {
@@ -735,8 +749,8 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
     mockAttach.mockRejectedValue(new Error("db down"));
 
     await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).resolves.toEqual({
-      subscriptionId: "sub_new",
-      prefillEmail: USER.email,
+      ok: true,
+      data: { subscriptionId: "sub_new", prefillEmail: USER.email },
     });
     expect(mockRelease).not.toHaveBeenCalled();
   });
@@ -747,7 +761,7 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
 
     const result = await createRazorpaySubscriptionAction(CHECKOUT_INPUT);
 
-    expect(result).toEqual({ subscriptionId: "sub_open", prefillEmail: USER.email });
+    expect(result).toEqual({ ok: true, data: { subscriptionId: "sub_open", prefillEmail: USER.email } });
     expect(fetchSubscription).toHaveBeenCalledWith("sub_open");
     expect(create).not.toHaveBeenCalled();
     expect(mockAttach).not.toHaveBeenCalled();
@@ -757,7 +771,7 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
     existingCheckout(null);
     const { create, fetchSubscription } = mockResume();
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/still being prepared/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/still being prepared/) });
 
     expect(create).not.toHaveBeenCalled();
     expect(fetchSubscription).not.toHaveBeenCalled();
@@ -768,7 +782,7 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
     mockClaim.mockResolvedValue({ outcome: "conflict" });
     const { create } = mockResume();
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/Another checkout is already in progress/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/Another checkout is already in progress/) });
 
     expect(create).not.toHaveBeenCalled();
     expect(mockRelease).not.toHaveBeenCalled();
@@ -789,7 +803,7 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
     existingCheckout("sub_open");
     const { create } = mockResume(subscriptionOverrides, planOverrides);
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/can't be reopened/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/can't be reopened/) });
 
     expect(create).not.toHaveBeenCalled();
   });
@@ -798,7 +812,7 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
     existingCheckout("sub_open");
     for (const status of ["authenticated", "active", "cancelled"]) {
       const { create } = mockResume({ status });
-      await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/can't be reopened/);
+      expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/can't be reopened/) });
       expect(create).not.toHaveBeenCalled();
     }
   });
@@ -808,16 +822,14 @@ describe("createRazorpaySubscriptionAction — durable one-open-checkout claim",
     const { create, fetchSubscription } = mockResume();
     fetchSubscription.mockRejectedValue({ statusCode: 502, error: { description: "raw provider detail" } });
 
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(
-      "Couldn't start checkout. Try again shortly or contact support.",
-    );
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: "Couldn't start checkout. Try again shortly or contact support." });
     expect(create).not.toHaveBeenCalled();
   });
 
   it("never attaches to or releases an existing checkout — it has no token for one, in progress or not", async () => {
     existingCheckout(null);
     mockResume();
-    await expect(createRazorpaySubscriptionAction(CHECKOUT_INPUT)).rejects.toThrow(/still being prepared/);
+    expect(await createRazorpaySubscriptionAction(CHECKOUT_INPUT)).toEqual({ ok: false, error: expect.stringMatching(/still being prepared/) });
 
     existingCheckout("sub_open");
     mockResume();
