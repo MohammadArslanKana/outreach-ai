@@ -28,7 +28,19 @@ export async function GET(request: NextRequest) {
   // value that matches it.
   const state = randomBytes(24).toString("base64url");
 
-  const response = NextResponse.redirect(buildGoogleAuthUrl(state));
+  // buildGoogleAuthUrl() throws if GOOGLE_OAUTH_CLIENT_ID/SECRET aren't set
+  // in this environment; the button is hidden then, but this route is
+  // reachable directly — same friendly fallback as the Microsoft route.
+  let authUrl: string;
+  try {
+    authUrl = buildGoogleAuthUrl(state);
+  } catch {
+    const url = new URL("/mailboxes", request.url);
+    url.searchParams.set("error", "Google Workspace connection isn't set up yet. Try again later.");
+    return NextResponse.redirect(url);
+  }
+
+  const response = NextResponse.redirect(authUrl);
   response.cookies.set(STATE_COOKIE_NAME, state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

@@ -28,6 +28,7 @@ vi.mock("@/lib/email/microsoft-oauth", async (importOriginal) => ({
 
 import { getUser } from "@/lib/supabase/auth";
 import { exchangeCodeForTokens as exchangeGoogleCode } from "@/lib/email/google-oauth";
+import { buildGoogleAuthUrl } from "@/lib/email/google-oauth";
 import { buildMicrosoftAuthUrl, exchangeCodeForTokens as exchangeMicrosoftCode } from "@/lib/email/microsoft-oauth";
 import { GET as googleStart, STATE_COOKIE_NAME as GOOGLE_STATE_COOKIE } from "./google/start/route";
 import { GET as googleCallback } from "./google/callback/route";
@@ -71,6 +72,22 @@ describe.each([
     const state = response.cookies.get(cookie)?.value;
     expect(state).toBeTruthy();
     expect(location.searchParams.get("state")).toBe(state);
+  });
+});
+
+describe("/api/oauth/google/start without Google credentials", () => {
+  it("sends a signed-in user back to /mailboxes with a friendly error instead of a 500", async () => {
+    mockGetUser.mockResolvedValue({ id: "user-1", email: "a@example.com" } as User);
+    vi.mocked(buildGoogleAuthUrl).mockImplementationOnce(() => {
+      throw new Error("GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET are not set");
+    });
+
+    const response = await googleStart(request("/api/oauth/google/start"));
+
+    const location = new URL(response.headers.get("location")!);
+    expect(location.pathname).toBe("/mailboxes");
+    expect(location.searchParams.get("error")).toBe("Google Workspace connection isn't set up yet. Try again later.");
+    expect(response.cookies.get(GOOGLE_STATE_COOKIE)).toBeUndefined();
   });
 });
 

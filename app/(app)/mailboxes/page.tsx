@@ -46,6 +46,9 @@ export default async function MailboxesPage({
         <MailboxList
           mailboxes={mailboxes}
           domains={domains ?? []}
+          googleOauthConfigured={Boolean(
+            process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+          )}
           microsoftOauthConfigured={Boolean(
             process.env.MICROSOFT_OAUTH_CLIENT_ID && process.env.MICROSOFT_OAUTH_CLIENT_SECRET,
           )}

@@ -49,10 +49,12 @@ function providerLabel(emailProvider: string) {
 export function MailboxList({
   mailboxes,
   domains,
+  googleOauthConfigured,
   microsoftOauthConfigured,
 }: {
   mailboxes: MailboxSafe[];
   domains: Tables<"domains">[];
+  googleOauthConfigured: boolean;
   microsoftOauthConfigured: boolean;
 }) {
   const [addOpen, setAddOpen] = useState(false);
@@ -112,18 +114,23 @@ export function MailboxList({
           <CardDescription>SMTP, Gmail, and Microsoft 365/Outlook accounts you can send campaigns from.</CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/api/oauth/google/start">
-              <PlugZapIcon />
-              Connect Google Workspace
-            </Link>
-          </Button>
+          {/* Plain <a>, not next/link: these are Route Handlers that set an
+              OAuth state cookie and redirect off-site, and <Link> would
+              prefetch them on every visit to this page. */}
+          {googleOauthConfigured && (
+            <Button variant="outline" size="sm" asChild>
+              <a href="/api/oauth/google/start">
+                <PlugZapIcon />
+                Connect Google Workspace
+              </a>
+            </Button>
+          )}
           {microsoftOauthConfigured && (
             <Button variant="outline" size="sm" asChild>
-              <Link href="/api/oauth/microsoft/start">
+              <a href="/api/oauth/microsoft/start">
                 <PlugZapIcon />
                 Connect Microsoft 365
-              </Link>
+              </a>
             </Button>
           )}
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
