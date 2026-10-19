@@ -1210,6 +1210,7 @@ export type Database = {
           imap_uid_validity: number | null
           imap_username: string | null
           reply_provider: string
+          reply_sync_claimed_at: string | null
           reply_sync_locked_until: string | null
           smtp_host: string
           smtp_port: number
@@ -1240,6 +1241,7 @@ export type Database = {
           imap_uid_validity?: number | null
           imap_username?: string | null
           reply_provider?: string
+          reply_sync_claimed_at?: string | null
           reply_sync_locked_until?: string | null
           smtp_host: string
           smtp_port?: number
@@ -1270,6 +1272,7 @@ export type Database = {
           imap_uid_validity?: number | null
           imap_username?: string | null
           reply_provider?: string
+          reply_sync_claimed_at?: string | null
           reply_sync_locked_until?: string | null
           smtp_host?: string
           smtp_port?: number
@@ -2219,6 +2222,7 @@ export type Database = {
           imap_uid_validity: number | null
           imap_username: string | null
           reply_provider: string
+          reply_sync_claimed_at: string | null
           reply_sync_locked_until: string | null
           smtp_host: string
           smtp_port: number
@@ -2280,6 +2284,12 @@ export type Database = {
       is_organization_member: {
         Args: { p_organization_id: string }
         Returns: boolean
+      }
+      mailboxes_due_for_reply_sync: {
+        Args: never
+        Returns: {
+          id: string
+        }[]
       }
       record_rate_limit_attempt: {
         Args: {

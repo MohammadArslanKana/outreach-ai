@@ -53,6 +53,7 @@ function makeMailbox(overrides: Partial<Tables<"mailboxes">> = {}): Tables<"mail
     encrypted_imap_password: "cipher-imap",
     imap_uid_validity: 100,
     imap_last_uid: 0,
+    reply_sync_claimed_at: null,
     reply_sync_locked_until: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",

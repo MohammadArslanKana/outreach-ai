@@ -40,8 +40,13 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
+// Machine-called API routes are excluded: pg_cron (api/cron), tracking
+// pixels and clicks (api/track), provider webhooks (api/webhooks) and the
+// uptime monitor (api/health) never carry a user session, so running Proxy
+// for them only adds an invocation to every call. api/oauth is kept — its
+// callbacks need the user's refreshed session.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/cron|api/track|api/webhooks|api/health|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
