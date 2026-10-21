@@ -20,15 +20,15 @@ select plan(29);
 select is((select count(*)::int from cron.job where jobname = 'sync-replies'), 1, 'exactly one sync-replies job');
 select is(
   (select row(schedule, command, username, active)::text from cron.job where jobname = 'sync-replies'),
-  row('*/2 * * * *', $$select private.invoke_cron_endpoint('/api/cron/sync-replies')$$, 'postgres', true)::text,
-  'sync-replies runs every 2 minutes as postgres with only the dispatcher call for /api/cron/sync-replies');
+  row('*/10 * * * *', $$select private.invoke_cron_endpoint_when_due('/api/cron/sync-replies', 20)$$, 'postgres', true)::text,
+  'sync-replies runs every 10 minutes as postgres through the work gate (20261019100000)');
 select is((select count(*)::int from cron.job where command like '%/api/cron/sync-replies%'), 1,
   'no other cron job also triggers sync-replies');
 select is((select count(*)::int from cron.job where jobname = 'send-emails'), 1, 'send-emails is still exactly one job');
 select is(
   (select row(schedule, command, username, active)::text from cron.job where jobname = 'send-emails'),
-  row('* * * * *', $$select private.invoke_cron_endpoint('/api/cron/send-emails')$$, 'postgres', true)::text,
-  'send-emails is unchanged: every minute, as postgres, the same dispatcher call');
+  row('* * * * *', $$select private.invoke_cron_endpoint_when_due('/api/cron/send-emails', 0)$$, 'postgres', true)::text,
+  'send-emails runs every minute as postgres through the work gate (20261019100000)');
 select is(
   (select row(schedule, command, username, active)::text from cron.job where jobname = 'cron-job-run-details-cleanup'),
   row('17 3 * * *', $$delete from cron.job_run_details where end_time < now() - interval '7 days'$$, 'postgres', true)::text,

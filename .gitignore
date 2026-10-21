@@ -48,3 +48,22 @@ project-tree.txt
 
 .vercel
 .env*
+
+# secrets and credentials (never commit)
+*.env
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+id_ed25519*
+secrets/
+credentials*.json
+service-account*.json
+
+# git bundles contain full repository history
+*.bundle
+
+# local notes with operational or security details
+/POLIMATIQ_*.txt
+/*security-review*.md

@@ -374,6 +374,7 @@ export async function testImapConnectionAction(
     encrypted_imap_password: encryptedPassword,
     imap_uid_validity: null,
     imap_last_uid: null,
+    reply_sync_claimed_at: null,
     reply_sync_locked_until: null,
   };
 
@@ -467,6 +468,7 @@ export async function testSmtpConnectionAction(
     encrypted_imap_password: null,
     imap_uid_validity: null,
     imap_last_uid: null,
+    reply_sync_claimed_at: null,
     reply_sync_locked_until: null,
   };
 

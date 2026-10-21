@@ -91,8 +91,8 @@ select is((select timeout_milliseconds from net.http_request_queue where id = (s
 select is((select count(*)::int from cron.job where jobname = 'send-emails'), 1, 'exactly one send-emails job');
 select is(
   (select row(schedule, command, username, active)::text from cron.job where jobname = 'send-emails'),
-  row('* * * * *', $$select private.invoke_cron_endpoint('/api/cron/send-emails')$$, 'postgres', true)::text,
-  'send-emails runs every minute as postgres with only the dispatcher call as its command');
+  row('* * * * *', $$select private.invoke_cron_endpoint_when_due('/api/cron/send-emails', 0)$$, 'postgres', true)::text,
+  'send-emails runs every minute as postgres with only the gated dispatcher call as its command');
 select is(
   (select row(schedule, command, username, active)::text from cron.job where jobname = 'cron-job-run-details-cleanup'),
   row('17 3 * * *', $$delete from cron.job_run_details where end_time < now() - interval '7 days'$$, 'postgres', true)::text,
