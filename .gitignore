@@ -1,12 +1,56 @@
-# Polimatiq workspace (C:\Users\suhee\Desktop\Plimatiq)
-# outreach-ai/ has its own git repo and its own .gitignore; the rules below
-# without a leading slash also apply inside it.
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# --- Environment files and secrets -------------------------------------------
-.env
-.env*
-*.env
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
 *.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# generated artifacts
+project-tree.txt
+
+# supabase CLI local cache
+/supabase/.temp/
+
+.vercel
+.env*
+
+# secrets and credentials (never commit)
+*.env
 *.key
 *.p12
 *.pfx
@@ -17,40 +61,9 @@ secrets/
 credentials*.json
 service-account*.json
 
-# --- Claude Code / local tool settings ---------------------------------------
-.claude/
-CLAUDE.local.md
-
-# --- Changelogs ----------------------------------------------------------------
-/POLIMATIQ_CHANGELOG*.txt
-/CHANGELOG*
-
-# --- Internal docs with operational or security details ------------------------
-# Production ids, deploy/rollback targets, env file locations, audit findings.
-/POLIMATIQ_*.txt
-/*security-review*.md
-
-# --- Git bundles (contain full repo history) -----------------------------------
+# git bundles contain full repository history
 *.bundle
 
-# --- Deployment / platform state -----------------------------------------------
-.vercel/
-supabase/.temp/
-supabase/.branches/
-
-# --- Dependencies and build output ---------------------------------------------
-node_modules/
-.next/
-out/
-build/
-coverage/
-*.tsbuildinfo
-
-# --- Logs and OS / editor files ------------------------------------------------
-*.log
-npm-debug.log*
-.DS_Store
-Thumbs.db
-desktop.ini
-.vscode/
-.idea/
+# local notes with operational or security details
+/POLIMATIQ_*.txt
+/*security-review*.md
