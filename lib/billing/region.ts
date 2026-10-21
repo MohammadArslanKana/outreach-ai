@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
+import { trustedClientIp } from "@/lib/rate-limit/get-client-ip";
 import { ROUTE_CURRENCY, type Currency } from "./currency";
+import { lookupCountryByIp } from "./geoip";
 
 // The one place Polimatiq decides which billing region a visitor is in.
 // The marketing pricing section, the billing page, and the Razorpay checkout
@@ -22,16 +24,25 @@ export type BillingRegion = "india" | "international";
 // are deliberately never consulted.
 export const COUNTRY_HEADER = "x-vercel-ip-country";
 
-// Outside Vercel (local dev, tests, any other host) every header is simply
-// whatever the client sent, so the country header is only trusted on Vercel
-// and is otherwise treated as missing.
+function asCountryCode(value: string | null): string | null {
+  return value !== null && /^[A-Z]{2}$/.test(value) ? value : null;
+}
+
+// On Vercel, the country comes from Vercel's own header. Anywhere else that
+// header (and every other country header) is simply whatever the client
+// sent, so it is ignored; the country comes instead from looking up the
+// client IP that the trusted proxy recorded (see trustedClientIp) in a local
+// GeoIP database (see lib/billing/geoip.ts). With no database configured —
+// local dev, tests — that lookup is always null, i.e. international.
 export function countryFromHeaders(
   requestHeaders: Pick<Headers, "get">,
   onVercel: boolean = process.env.VERCEL === "1",
+  lookupCountry: (ip: string) => string | null = lookupCountryByIp,
 ): string | null {
-  if (!onVercel) return null;
-  const country = requestHeaders.get(COUNTRY_HEADER);
-  return country !== null && /^[A-Z]{2}$/.test(country) ? country : null;
+  if (onVercel) return asCountryCode(requestHeaders.get(COUNTRY_HEADER));
+
+  const ip = trustedClientIp(requestHeaders);
+  return ip === null ? null : asCountryCode(lookupCountry(ip));
 }
 
 export function billingRegionForCountry(country: string | null): BillingRegion {
