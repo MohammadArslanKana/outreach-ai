@@ -125,14 +125,63 @@ describe.each([
     expect(exchange).not.toHaveBeenCalled();
   });
 
-  it("still rejects a mismatched state before checking the session", async () => {
+  it("rejects a missing state cookie", async () => {
     const response = await callback(
-      request(`/api/oauth/${provider}/callback?code=auth-code&state=forged`, { [cookie]: "matching-state" }),
+      request(
+        `/api/oauth/${provider}/callback?code=auth-code&state=matching-state`,
+      ),
     );
 
     const location = new URL(response.headers.get("location")!);
+
+    expect(response.status).toBe(307);
     expect(location.pathname).toBe("/mailboxes");
-    expect(location.searchParams.get("error")).toBe("This connection request is invalid or expired. Try connecting again.");
+    expect(location.searchParams.get("error")).toBe(
+      "This connection request is invalid or expired. Try connecting again.",
+    );
     expect(mockGetUser).not.toHaveBeenCalled();
+    expect(exchange).not.toHaveBeenCalled();
   });
-});
+
+  it("rejects a missing authorization code", async () => {
+    const response = await callback(
+      request(
+        `/api/oauth/${provider}/callback?state=matching-state`,
+        { [cookie]: "matching-state" },
+      ),
+    );
+
+    const location = new URL(response.headers.get("location")!);
+
+    expect(response.status).toBe(307);
+    expect(location.pathname).toBe("/mailboxes");
+    expect(location.searchParams.get("error")).toBe(
+      "This connection request is invalid or expired. Try connecting again.",
+    );
+    expect(mockGetUser).not.toHaveBeenCalled();
+    expect(exchange).not.toHaveBeenCalled();
+  });
+
+  it("handles provider cancellation without exchanging tokens", async () => {
+    const response = await callback(
+      request(
+        `/api/oauth/${provider}/callback?error=access_denied`,
+        { [cookie]: "matching-state" },
+      ),
+    );
+
+    const location = new URL(response.headers.get("location")!);
+
+    expect(response.status).toBe(307);
+    expect(location.pathname).toBe("/mailboxes");
+
+    expect(location.searchParams.get("error")).toBe(
+      provider === "google"
+        ? "Google sign-in was cancelled or denied."
+        : "Microsoft sign-in was cancelled or denied.",
+    );
+
+    expect(exchange).not.toHaveBeenCalled();
+    expect(response.cookies.get(cookie)?.value).toBe("");
+  }); 
+   });
