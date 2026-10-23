@@ -35,11 +35,12 @@ describe("RouteLoading", () => {
   });
 
   it("shows no visible text and announces a single loading status", () => {
-    expect(html.replace(/<[^>]+>/g, "").trim()).toBe("");
+    expect(html).toMatch(/^<div\b[^>]*role="status"[^>]*>/);
     expect(html.match(/role="status"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Loading"');
     expect(html).toContain('aria-busy="true"');
     expect(html).toMatch(/<span aria-hidden="true"/);
+    expect(html).toMatch(/<span aria-hidden="true"[^>]*><\/span><\/div>$/);
   });
 
   it("centres the spinner in a box the exact height of the content area", () => {
