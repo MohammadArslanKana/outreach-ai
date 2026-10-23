@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { JSDOM } from "jsdom";
 
 import { RouteLoading } from "./brand-loader";
 
@@ -35,7 +36,9 @@ describe("RouteLoading", () => {
   });
 
   it("shows no visible text and announces a single loading status", () => {
-    expect(html.replace(/<[^>]+>/g, "").trim()).toBe("");
+    const dom = new JSDOM(html);
+    expect(dom.window.document.body.textContent?.trim()).toBe("");
+    dom.window.close();
     expect(html.match(/role="status"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Loading"');
     expect(html).toContain('aria-busy="true"');
